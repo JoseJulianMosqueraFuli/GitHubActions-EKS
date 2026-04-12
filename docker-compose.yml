@@ -1,0 +1,19 @@
+services:
+  loadtest-api:
+    build: .
+    ports:
+      - "8080:8080"
+    # Limitar a 1 CPU para que el % sea preciso y predecible
+    cpus: "1.0"
+    mem_limit: 256m
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

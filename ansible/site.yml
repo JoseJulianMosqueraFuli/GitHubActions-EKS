@@ -1,0 +1,9 @@
+---
+- name: Crear infraestructura EKS con Fargate
+  hosts: local
+  gather_facts: false
+
+  roles:
+    - vpc
+    - iam
+    - eks

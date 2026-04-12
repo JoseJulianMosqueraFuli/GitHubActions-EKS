@@ -1,0 +1,42 @@
+---
+- name: Crear EKS Cluster
+  amazon.aws.eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    version: "{{ eks_version }}"
+    role_arn: "{{ eks_cluster_role.iam_role.arn }}"
+    subnets: "{{ subnet_ids }}"
+    region: "{{ aws_region }}"
+    state: present
+    tags:
+      Name: "{{ eks_cluster_name }}"
+      Project: "{{ project_name }}"
+    wait: true
+  register: eks_cluster
+
+- name: Esperar a que el cluster esté activo
+  amazon.aws.eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    region: "{{ aws_region }}"
+    state: present
+    wait: true
+
+- name: Crear Fargate Profile
+  command: >
+    aws eks create-fargate-profile
+    --cluster-name {{ eks_cluster_name }}
+    --fargate-profile-name {{ fargate_profile_name }}
+    --pod-execution-role-arn {{ fargate_role.iam_role.arn }}
+    --subnets {{ subnet_ids | join(' ') }}
+    --selectors namespace={{ fargate_namespace }}
+    --region {{ aws_region }}
+    --tags Project={{ project_name }}
+  register: fargate_profile
+  changed_when: fargate_profile.rc == 0
+  failed_when: fargate_profile.rc != 0 and 'ResourceInUseException' not in fargate_profile.stderr
+
+- name: Actualizar kubeconfig
+  command: >
+    aws eks update-kubeconfig
+    --name {{ eks_cluster_name }}
+    --region {{ aws_region }}
+  changed_when: false

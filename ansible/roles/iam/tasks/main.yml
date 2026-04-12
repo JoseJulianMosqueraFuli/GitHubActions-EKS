@@ -1,0 +1,49 @@
+---
+- name: Crear EKS Cluster Role
+  amazon.aws.iam_role:
+    name: "{{ project_name }}-eks-cluster-role"
+    assume_role_policy_document: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "eks.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    managed_policies:
+      - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+      - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+    state: present
+    tags:
+      Name: "{{ project_name }}-eks-cluster-role"
+      Project: "{{ project_name }}"
+  register: eks_cluster_role
+
+- name: Crear Fargate Pod Execution Role
+  amazon.aws.iam_role:
+    name: "{{ project_name }}-fargate-pod-execution-role"
+    assume_role_policy_document: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "eks-fargate-pods.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    managed_policies:
+      - arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
+    state: present
+    tags:
+      Name: "{{ project_name }}-fargate-pod-execution-role"
+      Project: "{{ project_name }}"
+  register: fargate_role

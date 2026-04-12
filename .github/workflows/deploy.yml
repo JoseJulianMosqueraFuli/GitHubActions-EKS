@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: loadtest-api
-  EKS_CLUSTER_NAME: loadtest-cluster
+  EKS_CLUSTER_NAME: githubActions-EKS
   K8S_NAMESPACE: default
 
 permissions:

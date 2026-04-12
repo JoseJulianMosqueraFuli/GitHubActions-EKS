@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: loadtest-api
-          image: loadtest-api:latest
+          image: IMAGE_PLACEHOLDER
           ports:
             - containerPort: 8080
           resources:

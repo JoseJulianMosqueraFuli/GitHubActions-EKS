@@ -1,0 +1,63 @@
+name: Build & Deploy to EKS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: loadtest-api
+  EKS_CLUSTER_NAME: loadtest-cluster
+  K8S_NAMESPACE: default
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag & push image to ECR
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          FULL_IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $FULL_IMAGE .
+          docker push $FULL_IMAGE
+          echo "image=$FULL_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Deploy to EKS
+        env:
+          FULL_IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          sed -i "s|IMAGE_PLACEHOLDER|$FULL_IMAGE|g" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/hpa.yaml -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/loadtest-api \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=120s

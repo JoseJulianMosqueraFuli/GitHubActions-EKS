@@ -1,0 +1,14 @@
+# Python virtual environment
+venv/
+venv-wsl/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Ansible
+ansible/
+
+# Terraform
+terraform/

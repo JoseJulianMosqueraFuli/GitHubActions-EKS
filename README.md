@@ -20,138 +20,112 @@ curl http://localhost:8080/health
 curl http://localhost:8080/50
 ```
 
-## Paso a paso: Despliegue a AWS EKS desde GitHub Actions
+## Infraestructura con Terraform
 
-### Paso 1 — Crear el repositorio ECR en AWS
+La carpeta `terraform/` contiene todo lo necesario para provisionar la infraestructura en AWS:
 
-```bash
-aws ecr create-repository \
-  --repository-name loadtest-api \
-  --region us-east-1
-```
+- VPC con subnets públicas e internet gateway
+- Cluster EKS con authentication mode API + ConfigMap
+- Node group (2x t3.medium por defecto)
+- Repositorio ECR con lifecycle policy (mantiene últimas 10 imágenes)
+- Access entry para el IAM user de GitHub Actions
 
-Anota el URI del repositorio que te devuelve (algo como `123456789012.dkr.ecr.us-east-1.amazonaws.com/loadtest-api`).
-
-### Paso 2 — Crear el cluster EKS (si no lo tienes)
+### Desplegar infraestructura
 
 ```bash
-# Instalar eksctl si no lo tienes: https://eksctl.io/installation/
-eksctl create cluster \
-  --name loadtest-cluster \
-  --region us-east-1 \
-  --nodes 2 \
-  --node-type t3.medium
+cd terraform
+
+# Inicializar
+terraform init
+
+# Ver qué se va a crear
+terraform plan
+
+# Aplicar
+terraform apply
 ```
 
-Esto tarda ~15 minutos. Si ya tienes un cluster, asegúrate de que el nombre coincida con `EKS_CLUSTER_NAME` en el workflow.
+Esto tarda ~15 minutos (principalmente el cluster EKS).
 
-### Paso 3 — Crear un IAM User para GitHub Actions
+### Variables de Terraform
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `aws_region` | `us-east-1` | Región de AWS |
+| `cluster_name` | `githubActions-EKS` | Nombre del cluster EKS |
+| `ecr_repository_name` | `loadtest-api` | Nombre del repo ECR |
+| `github_iam_user_arn` | `arn:aws:iam::231629457413:user/josejmosqueraf@unicauca.edu.co` | ARN del IAM user de GitHub Actions |
+| `node_instance_type` | `t3.medium` | Tipo de instancia para los nodos |
+| `node_desired_size` | `2` | Número de nodos deseados |
+
+Para usar valores diferentes:
 
 ```bash
-aws iam create-user --user-name github-actions-deployer
-
-aws iam attach-user-policy \
-  --user-name github-actions-deployer \
-  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
-
-aws iam attach-user-policy \
-  --user-name github-actions-deployer \
-  --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+terraform apply -var="cluster_name=mi-cluster" -var="node_instance_type=t3.small"
 ```
 
-Además, necesitas que el user pueda ejecutar `kubectl` contra el cluster. Agrega el user al `aws-auth` ConfigMap del cluster:
+### Destruir infraestructura
 
 ```bash
-eksctl create iamidentitymapping \
-  --cluster loadtest-cluster \
-  --region us-east-1 \
-  --arn arn:aws:iam::<ACCOUNT_ID>:user/github-actions-deployer \
-  --group system:masters \
-  --username github-actions-deployer
+terraform destroy
 ```
 
-Luego genera las access keys:
+## CI/CD con GitHub Actions
+
+El pipeline (`.github/workflows/deploy.yml`) se dispara manualmente desde GitHub Actions.
+
+### Configurar secrets en GitHub
+
+1. Ve a tu repo → Settings → Environments → crear environment "AWS"
+2. Agrega estos secrets en el environment:
+
+| Secret | Descripción |
+|--------|-------------|
+| `AWS_ACCESS_KEY_ID` | Access key del IAM user |
+| `AWS_SECRET_ACCESS_KEY` | Secret key del IAM user |
+
+### Ejecutar el pipeline
+
+GitHub → Actions → "Build & Deploy to EKS" → Run workflow
+
+### Qué hace el pipeline
+
+1. Autentica con AWS usando access keys
+2. Construye la imagen Docker y la sube a ECR (tag: SHA del commit)
+3. Configura kubectl para el cluster EKS
+4. Aplica los manifiestos de Kubernetes
+5. Espera a que el rollout complete (timeout: 120s)
+
+### Verificar el despliegue
 
 ```bash
-aws iam create-access-key --user-name github-actions-deployer
-```
-
-Esto te devuelve `AccessKeyId` y `SecretAccessKey`. Guárdalos, los necesitas en el siguiente paso.
-
-### Paso 4 — Configurar secrets en GitHub
-
-1. Ve a tu repositorio en GitHub
-2. Settings → Secrets and variables → Actions
-3. Click en "New repository secret" y crea estos dos:
-
-| Secret | Valor |
-|--------|-------|
-| `AWS_ACCESS_KEY_ID` | El `AccessKeyId` del paso anterior |
-| `AWS_SECRET_ACCESS_KEY` | El `SecretAccessKey` del paso anterior |
-
-### Paso 5 — Ajustar variables del workflow (si es necesario)
-
-Abre `.github/workflows/deploy.yml` y verifica que estas variables coincidan con tu setup:
-
-```yaml
-env:
-  AWS_REGION: us-east-1          # Tu región
-  ECR_REPOSITORY: loadtest-api   # Nombre del repo ECR (paso 1)
-  EKS_CLUSTER_NAME: loadtest-cluster  # Nombre del cluster (paso 2)
-  K8S_NAMESPACE: default         # Namespace de K8s
-```
-
-### Paso 6 — Push y desplegar
-
-```bash
-git add .
-git commit -m "Add CI/CD pipeline for EKS"
-git push origin main
-```
-
-El pipeline se dispara automáticamente en push a `main`. También puedes dispararlo manualmente desde GitHub → Actions → "Build & Deploy to EKS" → Run workflow.
-
-### Paso 7 — Verificar el despliegue
-
-```bash
-# Configurar kubectl local
-aws eks update-kubeconfig --region us-east-1 --name loadtest-cluster
-
-# Ver pods
+aws eks update-kubeconfig --region us-east-1 --name githubActions-EKS
 kubectl get pods
-
-# Ver el servicio y obtener la URL del LoadBalancer
 kubectl get svc loadtest-api
 ```
 
-La columna `EXTERNAL-IP` del servicio es la URL de tu API. Puede tardar 2-3 minutos en asignarse.
-
-```bash
-curl http://<EXTERNAL-IP>/health
-curl http://<EXTERNAL-IP>/50
-```
-
-## Qué hace el pipeline
-
-1. Se dispara en push a `main` o manualmente
-2. Autentica con AWS usando access keys (secrets de GitHub)
-3. Construye la imagen Docker y la sube a ECR con tag del SHA del commit
-4. Configura kubectl para el cluster EKS
-5. Aplica los manifiestos de Kubernetes con la imagen nueva
-6. Espera a que el rollout complete (timeout: 120s)
+La columna `EXTERNAL-IP` del service es la URL de tu API.
 
 ## Kubernetes
 
 - `k8s/deployment.yaml` — Deployment + Service (LoadBalancer) con health checks y resource limits
-- `k8s/hpa.yaml` — Autoescalado de 1 a 10 réplicas cuando CPU > 50%
+- `k8s/hpa.yaml` — Autoescalado de 1 a 10 réplicas cuando CPU promedio > 50%
 
-## Estructura
+## Estructura del proyecto
 
 ```
 ├── .github/workflows/deploy.yml   # CI/CD pipeline
 ├── k8s/
 │   ├── deployment.yaml            # Deployment + Service
 │   └── hpa.yaml                   # HPA
+├── terraform/
+│   ├── versions.tf                # Provider y versiones
+│   ├── variables.tf               # Variables configurables
+│   ├── vpc.tf                     # VPC, subnets, IGW
+│   ├── eks.tf                     # Cluster EKS + access entry
+│   ├── nodes.tf                   # Node group
+│   ├── ecr.tf                     # ECR repository
+│   └── outputs.tf                 # Outputs útiles
 ├── app.py                         # API Flask
 ├── Dockerfile
 ├── docker-compose.yml

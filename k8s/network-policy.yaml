@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loadtest-api-policy
+  namespace: loadtest
+spec:
+  podSelector:
+    matchLabels:
+      app: loadtest-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53

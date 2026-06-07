@@ -1,0 +1,81 @@
+{
+  "dashboard": {
+    "title": "LoadTest API - EKS Monitoring",
+    "description": "Monitoring dashboard for LoadTest API deployed on EKS",
+    "panels": [
+      {
+        "title": "Pod CPU Usage",
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"loadtest-api.*\"}[5m])) by (pod)",
+            "legendFormat": "{{pod}}"
+          }
+        ]
+      },
+      {
+        "title": "Pod Memory Usage",
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(container_memory_working_set_bytes{pod=~\"loadtest-api.*\"}) by (pod)",
+            "legendFormat": "{{pod}}"
+          }
+        ]
+      },
+      {
+        "title": "Active Replicas",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "kube_deployment_status_replicas_available{deployment=\"loadtest-api\"}"
+          }
+        ]
+      },
+      {
+        "title": "HTTP Request Rate",
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{service=\"loadtest-api\"}[5m])) by (status_code)",
+            "legendFormat": "{{status_code}}"
+          }
+        ]
+      },
+      {
+        "title": "HPA Target CPU vs Actual",
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "kube_horizontalpodautoscaler_status_current_metrics_average_value{horizontalpodautoscaler=\"loadtest-api-hpa\"}",
+            "legendFormat": "Current CPU %"
+          },
+          {
+            "expr": "kube_horizontalpodautoscaler_spec_target_metric{horizontalpodautoscaler=\"loadtest-api-hpa\"}",
+            "legendFormat": "Target CPU %"
+          }
+        ]
+      },
+      {
+        "title": "Network I/O",
+        "type": "graph",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(container_network_receive_bytes_total{pod=~\"loadtest-api.*\"}[5m])) by (pod)",
+            "legendFormat": "RX {{pod}}"
+          },
+          {
+            "expr": "sum(rate(container_network_transmit_bytes_total{pod=~\"loadtest-api.*\"}[5m])) by (pod)",
+            "legendFormat": "TX {{pod}}"
+          }
+        ]
+      }
+    ]
+  }
+}
